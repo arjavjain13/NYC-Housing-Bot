@@ -1,0 +1,132 @@
+# StreetEasy Housing Bot configuration.
+#
+# There are two ways to define the search. The bot uses `search.urls` if it is
+# non-empty; otherwise it builds a URL from the `search.build` components.
+#
+# RECOMMENDED: open StreetEasy in your browser, set every filter and neighborhood
+# exactly the way you want (you already have the neighborhood chips selected),
+# then copy the full URL from the address bar and paste it under `search.urls`.
+# This is the most reliable approach because it avoids guessing StreetEasy's
+# internal neighborhood area IDs.
+
+search:
+  # Option A (recommended): one or more pasted StreetEasy search-result URLs.
+  # Each URL is polled every cycle. Sorted newest-first so brand-new listings
+  # appear at the top, which is what the bot keys off of for speed.
+  urls:
+    - "https://streeteasy.com/for-rent/nyc/status:open%7Cprice:2000-4700%7Carea:115,120,122,123,124,158%7Cbeds:2%7Cbaths%3E=1%7Cin_rect:40.701,40.784,-74.021,-73.895%7Cavailable_after:20260801?sort_by=listed_desc"
+    - "https://streeteasy.com/for-rent/nyc/status:open%7Cprice:2000-4700%7Carea:115,120,122,123,124,158%7Cbeds:1%7Cbaths%3E=1%7Cin_rect:40.701,40.784,-74.021,-73.895%7Cavailable_after:20260801?sort_by=listed_desc"
+
+  # Option B (fallback): build a single URL from these components. Only used when
+  # `search.urls` above is empty. `area_ids` are StreetEasy's numeric neighborhood
+  # IDs (see the comment block below to find them).
+  build:
+    min_price: 0
+    max_price: 4700
+    beds: 2
+    min_baths: 1
+    max_baths: 2
+    no_fee: false
+    # StreetEasy neighborhood area IDs. The names are your selected neighborhoods;
+    # fill the IDs by opening each on StreetEasy and reading the `area:<id>` value
+    # in the URL, or just use Option A above and leave this empty.
+    #   Manhattan: All Downtown, Midtown, Midtown South, Murray Hill, Sutton Place,
+    #              Turtle Bay, Kips Bay, Hudson Yards, Hell's Kitchen
+    #   Brooklyn:  Downtown Brooklyn, Brooklyn Heights, DUMBO
+    #   Queens:    Long Island City
+    area_ids: []
+    # Always sort newest-first so brand-new listings appear at the top.
+    sort_by: "listed_desc"
+
+# Post-fetch filtering applied to each candidate listing.
+filters:
+  # Drop pre-war buildings. A listing is considered pre-war if its year built is
+  # below `min_year_built`. NOTE: only enforced when detail pages are fetched
+  # (year-built isn't in the search data). With fetch_detail_pages off, pre-war
+  # filtering is handled entirely by the `pre_war:no` flag in your search URL.
+  exclude_pre_war: false
+  min_year_built: 1947
+  # Desired move-in window (inclusive), ISO format YYYY-MM-DD.
+  move_in_start: "2026-08-01"
+  move_in_end: "2026-08-15"
+  # Hard caps re-checked after parsing detail pages (defense in depth in case the
+  # search URL is looser than intended).
+  max_price: 4700
+  # When year-built or move-in date cannot be determined, still notify so nothing
+  # is missed. Such listings are flagged in the email as "unverified".
+  notify_on_missing_data: true
+  # Case-insensitive blocklist: any listing whose detail-page description contains
+  # one of these phrases is skipped. Requires browser.fetch_detail_pages: true
+  # (the description is only on the detail page). "NYC Housing Connect" = the NYC
+  # affordable-housing lottery, which does not apply to you.
+  exclude_keywords:
+    - "NYC Housing Connect"
+    - "Housing Connect"
+    - "housing lottery"
+
+# Polling cadence. Each cycle waits a random number of seconds in [min, max] to
+# look less robotic while staying fast.
+poll:
+  min_seconds: 60
+  max_seconds: 120
+
+# Email is configured via environment variables (see .env.example):
+#   GMAIL_USER, GMAIL_APP_PASSWORD, MAIL_RECIPIENTS
+# Recipients listed here are merged with MAIL_RECIPIENTS from the environment.
+email:
+  recipients: []
+  subject_prefix: "[StreetEasy]"
+
+# Where the SQLite dedup database is stored, relative to this file.
+storage:
+  db_path: "seen_listings.db"
+
+# How to fetch StreetEasy pages:
+#   http    - plain HTTP requests (default). Fast, no browser, runs under cron,
+#             works on a free cloud VM 24/7. StreetEasy currently server-renders
+#             the listings and does not challenge plain requests.
+#   browser - drive a real browser (Playwright/Chrome). Only needed as a fallback
+#             if StreetEasy ever starts blocking plain requests. Uses everything
+#             in the `browser:` section below (channel, cdp_url, solve, etc.).
+fetch_mode: "http"
+
+# Browser-backend settings (only used when fetch_mode: browser).
+browser:
+  # STRONGEST anti-block option: connect to your OWN already-running Chrome via
+  # remote debugging instead of letting the bot launch a browser. You browse and
+  # solve any challenge as a human; the bot just reads the page over CDP. Launch
+  # Chrome first in a separate terminal (see README "Connect to your own Chrome"):
+  #   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  #     --remote-debugging-port=9222 --user-data-dir="$HOME/se-bot-chrome"
+  # then visit your StreetEasy search URL once and solve the Press & Hold. Finally
+  # set this to the debug URL. Leave null to have the bot launch its own browser.
+  cdp_url: "http://localhost:9222"
+  # Headful (a visible window) evades StreetEasy's bot protection MUCH better than
+  # headless. Keep false on a laptop/desktop. On a headless server, set true and
+  # launch under a virtual display, e.g. `xvfb-run python main.py`.
+  headless: false
+  # Which browser binary to drive. "chrome" uses your installed Google Chrome,
+  # which renders the PerimeterX challenge correctly and is far less likely to be
+  # flagged than the bundled Chromium. Set to null to use bundled Chromium.
+  channel: "chrome"
+  # Persistent browser profile dir (keeps the PerimeterX clearance cookie between
+  # runs so you aren't re-challenged every cycle). Relative to this folder.
+  user_data_dir: ".browser_profile"
+  # Visit the homepage once at startup so the session looks organic.
+  warmup: true
+  # When a PerimeterX "Press & Hold" challenge appears (headful only), pause and
+  # wait for you to solve it by hand in the window. Once solved, the clearance
+  # cookie is saved to user_data_dir and reused for hours, so this is occasional.
+  solve_interactively: true
+  solve_timeout_seconds: 180
+  # When a bot challenge is detected, save the page HTML + screenshot here for
+  # inspection. Set to null to disable.
+  debug_dir: "debug"
+  # Visit each new candidate's detail page. REQUIRED for filters.exclude_keywords
+  # (the description lives only on the detail page) and for reading year-built /
+  # available date. Only candidates that already pass price/beds/baths/area get
+  # fetched, so in steady-state monitoring this is usually 0-1 pages per cycle --
+  # low enough to rarely trigger a bot check.
+  fetch_detail_pages: true
+  # Seconds to wait between detail-page fetches within a single cycle.
+  detail_delay_seconds: 4

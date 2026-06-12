@@ -1,0 +1,29 @@
+# systemd unit for the StreetEasy bot (Oracle Cloud VM / any Linux box).
+#
+# Install:
+#   sudo cp deploy/streeteasy-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now streeteasy-bot
+#   journalctl -u streeteasy-bot -f      # follow logs
+#
+# Adjust User, WorkingDirectory, and ExecStart paths to match your install.
+
+[Unit]
+Description=StreetEasy housing notification bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/NYC-Housing-Bot/streeteasy_bot
+# Use the venv's python so dependencies resolve. Runs the built-in poll loop.
+ExecStart=/home/ubuntu/NYC-Housing-Bot/streeteasy_bot/.venv/bin/python main.py
+Restart=always
+RestartSec=15
+# Restart the process daily as a cheap defense against memory leaks.
+RuntimeMaxSec=86400
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
